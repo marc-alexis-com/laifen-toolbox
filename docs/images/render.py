@@ -1,9 +1,11 @@
 """Renders the README images of laifen-toolbox (PNG, drawn at 2x).
 
-    python3 render.py OUT_DIR IOSEVKA_REGULAR.ttf IOSEVKA_BOLD.ttf DOTO.ttf NAME=FILE.ansi...
+    python3 render.py OUT_DIR IOSEVKA_REGULAR.ttf IOSEVKA_BOLD.ttf POPPINS_DIR NAME=FILE.ansi...
 
-Needs Pillow. Fonts: Iosevka (https://github.com/be5invis/Iosevka) for all text and the
-terminal screenshots, Doto (https://github.com/oliverlalan/Doto, SIL OFL) for the title.
+Needs Pillow. Fonts: Iosevka (https://github.com/be5invis/Iosevka) for the terminal
+screenshots, Poppins (https://github.com/itfoundry/Poppins, SIL OFL; POPPINS_DIR holds
+Poppins-Light/Regular/Medium/SemiBold.ttf) for the banner: the geometric sans the vendor's
+own site falls back to.
 Each NAME=FILE.ansi pair renders FILE.ansi to OUT_DIR/NAME.png. The pictures come from the
 tool's own renderer (`LAIFEN_PREVIEW_DIR=DIR cargo test --release readme_pictures -- --ignored`),
 read from $PICTURES: `spin/` (the brush turning, for the banner), `tui.png` and `brushing/`
@@ -12,8 +14,9 @@ read from $PICTURES: `spin/` (the brush turning, for the banner), `tui.png` and 
 $BRUSHING_WINDOWS (a directory of frame-*.ansi). The other inputs are real terminal output
 captured with `tmux capture-pane -e -p`, one-shot commands preceded by their own prompt line.
 
-Style: monochrome ink on paper (or paper on ink), hairline rules, uppercase mono labels,
-dot-matrix only for the title. Terminal shots use the Ayu Dark palette.
+Style: the vendor's own look, as on its site and in its app: a light-grey studio, near-black
+text (#151515), neutral greys, rounded pills, and nothing else; a #151515 version for dark
+pages. Terminal shots are light cards. The 3D brush is the tool's own renderer, pixels and all.
 Adapted from nothing-toolbox's render.py (same author).
 """
 import math
@@ -21,9 +24,9 @@ import os
 import re
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
-OUT, IOS_R, IOS_B, DOTO = sys.argv[1:5]
+OUT, IOS_R, IOS_B, POPPINS = sys.argv[1:5]
 SHOTS = [arg.split("=", 1) for arg in sys.argv[5:]]
 PICTURES = os.environ["PICTURES"]
 
@@ -75,10 +78,14 @@ def save(frames, path):
 
 K = 2  # supersampling: every logical pixel is K device pixels
 
-# --- Shared design tokens (monochrome, one red) -----------------------------------------
+# --- Design tokens: the vendor's look ----------------------------------------------------
 THEMES = {
-    "light": dict(bg="#ffffff", ink="#000000", muted="#585a5a", hair="#e5e7eb", off="#e9eaec", red="#d71921"),
-    "dark": dict(bg="#000000", ink="#ffffff", muted="#9a9c9c", hair="#2a2a2a", off="#1c1c1c", red="#e5262e"),
+    # The vendor's site: white and #f5f5f5, text #151515, greys #585858 / #888888, rules #e2e2e2.
+    "light": dict(top="#f7f7f8", bottom="#e4e5e7", ink="#151515", body="#585858", muted="#888888",
+                  hair="#e2e2e2", pill="#ffffff", shadow=(0, 0, 0, 46)),
+    # Its footer and dark sections: #151515 and #1c1c1c.
+    "dark": dict(top="#232325", bottom="#151515", ink="#ffffff", body="#b8b8bc", muted="#888888",
+                 hair="#333336", pill="#1c1c1e", shadow=(0, 0, 0, 110)),
 }
 
 
@@ -86,18 +93,8 @@ def mono(size, bold=False):
     return ImageFont.truetype(IOS_B if bold else IOS_R, size * K)
 
 
-def doto(size, weight=700, round_=100):
-    f = ImageFont.truetype(DOTO, size * K)
-    try:
-        axes = {a["name"] if isinstance(a.get("name"), str) else a["name"].decode(): a for a in f.get_variation_axes()}
-        values = []
-        for a in f.get_variation_axes():
-            name = a["name"].decode() if isinstance(a["name"], bytes) else a["name"]
-            values.append(weight if "eight" in name else round_)
-        f.set_variation_by_axes(values)
-    except OSError:
-        pass
-    return f
+def poppins(size, weight="Regular"):
+    return ImageFont.truetype(os.path.join(POPPINS, f"Poppins-{weight}.ttf"), size * K)
 
 
 def spaced(draw, xy, text, font, fill, tracking=0.0):
@@ -116,46 +113,52 @@ def text_width(draw, text, font, tracking=0.0):
 def hero(theme):
     t = THEMES[theme]
     W, H = 960, 400
-    img = Image.new("RGB", (W * K, H * K), t["bg"])
+    img = Image.new("RGB", (W * K, H * K), t["top"])
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, W * K - 1, H * K - 1], outline=t["hair"], width=K)
+    # A studio backdrop: a soft vertical gradient, as behind the vendor's product shots.
+    top, bottom = ImageColor.getrgb(t["top"]), ImageColor.getrgb(t["bottom"])
+    for y in range(H * K):
+        f = y / (H * K - 1)
+        d.line([(0, y), (W * K, y)], fill=tuple(round(a + (b - a) * f) for a, b in zip(top, bottom)))
 
-    x = 470
-    cap = mono(11)
-    chip = "UNOFFICIAL  ·  LINUX CLIENT"
-    cwid = text_width(d, chip, cap, 0.6) / K
-    d.rectangle([x * K, 58 * K, (x + cwid + 20) * K, 82 * K], outline=t["hair"], width=K)
-    spaced(d, ((x + 10) * K, 63 * K), chip, cap, t["muted"], 0.6)
+    x = 64
+    cap = poppins(11, "Medium")
+    chip = "UNOFFICIAL LINUX CLIENT"
+    cw = text_width(d, chip, cap, 1.4) / K
+    d.rounded_rectangle([x * K, 70 * K, (x + cw + 28) * K, 96 * K], radius=13 * K, fill=t["pill"], outline=t["hair"], width=K)
+    spaced(d, ((x + 14) * K, 75 * K), chip, cap, t["muted"], 1.4)
 
-    size = 54
-    while size > 20 and text_width(d, "laifen-toolbox", doto(size), 1.0) / K > W - 40 - x:
-        size -= 1
-    spaced(d, (x * K, 110 * K), "laifen-toolbox", doto(size), t["ink"], 1.0)
+    d.text((x * K, 112 * K), "laifen-toolbox", font=poppins(50, "SemiBold"), fill=t["ink"])
+    body = poppins(19, "Light")
+    d.text((x * K, 192 * K), "Control your Laifen Wave", font=body, fill=t["body"])
+    d.text((x * K, 220 * K), "from a Linux terminal.", font=body, fill=t["body"])
 
-    body = mono(17)
-    d.text((x * K, 190 * K), "Control the Laifen Wave toothbrush", font=body, fill=t["ink"])
-    d.text((x * K, 214 * K), "from a Linux terminal.", font=body, fill=t["ink"])
+    px = x
+    tag = poppins(13, "Medium")
+    for label in ["LFTB01-P", "Bluetooth LE", "No app, no account", "Rust"]:
+        w = text_width(d, label, tag) / K
+        d.rounded_rectangle([px * K, 288 * K, (px + w + 30) * K, 320 * K], radius=16 * K, fill=t["pill"], outline=t["hair"], width=K)
+        d.text(((px + 15) * K, 294 * K), label, font=tag, fill=t["ink"])
+        px += w + 40
 
-    specs = [("MODEL", "LFTB01-P"), ("LINK", "BLUETOOTH LE"), ("BUILT WITH", "RUST")]
-    y = 270
-    lab, val = mono(11), mono(13)
-    for k, v in specs:
-        d.line([(x * K, y * K), ((W - 40) * K, y * K)], fill=t["hair"], width=K)
-        spaced(d, (x * K, (y + 10) * K), k, lab, t["muted"], 0.6)
-        d.text(((x + 170) * K, (y + 8) * K), v, font=val, fill=t["ink"])
-        y += 34
-    d.line([(x * K, y * K), ((W - 40) * K, y * K)], fill=t["hair"], width=K)
-
-    save(turning(BRUSH_FRAMES, img, 40, 30, 380, 340), f"{OUT}/hero-{theme}.png")
-
-
+    # The brush on the right, over a soft shadow on the floor of the studio.
+    box = (600, 28, 300, 344)
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    cx, cy = (box[0] + box[2] / 2) * K, (box[1] + box[3] - 14) * K
+    sd.ellipse([cx - 70 * K, cy - 9 * K, cx + 70 * K, cy + 9 * K], fill=t["shadow"])
+    shadow = shadow.filter(ImageFilter.GaussianBlur(9 * K))
+    img = Image.alpha_composite(img.convert("RGBA"), shadow).convert("RGB")
+    save(turning(BRUSH_FRAMES, img, *box), f"{OUT}/hero-{theme}.png")
 
 
 # --- Terminal screenshots, kitty-like -------------------------------------------------------
 AYU = {
-    "bg": "#0b0e14", "fg": "#bfbdb6",
-    "pal": ["#01060e", "#ea6c73", "#91b362", "#f9af4f", "#53bdfa", "#fae994", "#90e1c6", "#c7c7c7",
-            "#686868", "#f07178", "#aad94c", "#ffb454", "#59c2ff", "#ffee99", "#95e6cb", "#ffffff"],
+    # A light terminal in the vendor's colours: #f5f5f5 paper, #151515 ink, its greys, and the
+    # app's blue and green for the few coloured bits.
+    "bg": "#f5f5f5", "fg": "#151515",
+    "pal": ["#151515", "#d92d20", "#279a4b", "#b7791f", "#3b82f6", "#8e44ad", "#0e7490", "#585858",
+            "#888888", "#e5484d", "#279a4b", "#b7791f", "#3b82f6", "#8e44ad", "#0e7490", "#151515"],
 }
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
 OTHER = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -222,7 +225,15 @@ def braille(d, x, y, w, h, bits, color):
 
 
 def terminal(src, name, cols=None):
-    terminal_image(src, cols).save(f"{OUT}/{name}.png", optimize=True)
+    """A light card with round corners, transparent around them."""
+    body = terminal_image(src, cols)
+    card = Image.new("RGBA", body.size, (0, 0, 0, 0))
+    mask = Image.new("L", body.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, body.width - 1, body.height - 1], radius=14 * K, fill=255)
+    card.paste(body, (0, 0), mask)
+    ImageDraw.Draw(card).rounded_rectangle([0, 0, body.width - 1, body.height - 1], radius=14 * K,
+                                           outline="#e2e2e2", width=K)
+    card.save(f"{OUT}/{name}.png", optimize=True)
 
 
 def animation(directory, name):

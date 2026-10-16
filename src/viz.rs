@@ -10,8 +10,12 @@ pub const RESET: &str = "\x1b[0m";
 
 /// Width of the window, flush right, over the picture.
 pub const WINDOW: usize = 36;
-/// Its background, a dark slate.
-const WINDOW_BG: &str = "\x1b[48;2;14;16;22m";
+/// Its background: the dark background of the system palette the vendor's app is drawn with
+/// (iOS's, #1c1c1e).
+const WINDOW_BG: &str = "\x1b[48;2;28;28;30m";
+/// Its text colour, set explicitly: with the terminal's own, a light theme would draw dark text
+/// on the dark window.
+const WINDOW_FG: &str = "\x1b[38;2;229;229;234m";
 
 /// Prints row `row` of a picture as half blocks: the upper pixel in the foreground of `▀`,
 /// the lower one in its background.
@@ -65,15 +69,15 @@ pub fn visible_len(s: &str) -> usize {
 
 /// The window's text framed in a box, every line `WINDOW` cells wide on its dark background.
 fn framed(window: &[String]) -> Vec<String> {
-    let frame = "\x1b[38;5;245m";
+    let frame = "\x1b[38;2;58;58;60m";
     let bar = "─".repeat(WINDOW - 2);
     let mut lines = vec![format!("{WINDOW_BG}{frame}┌{bar}┐{RESET}")];
     for line in window {
-        // The colour sequences end with a reset: bring the background back after each.
-        let line = line.replace(RESET, &format!("{RESET}{WINDOW_BG}"));
+        // The colour sequences end with a reset: bring the window's colours back after each.
+        let line = line.replace(RESET, &format!("{RESET}{WINDOW_BG}{WINDOW_FG}"));
         let pad = (WINDOW - 4).saturating_sub(visible_len(&line));
         lines.push(format!(
-            "{WINDOW_BG}{frame}│{RESET}{WINDOW_BG} {line}{}{frame}│{RESET}",
+            "{WINDOW_BG}{frame}│{RESET}{WINDOW_BG}{WINDOW_FG} {line}{}{frame}│{RESET}",
             " ".repeat(pad + 1)
         ));
     }

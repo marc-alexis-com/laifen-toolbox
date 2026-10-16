@@ -334,6 +334,10 @@ struct Ui {
     frame: u64,
 }
 
+/// Colours inside a line that may be highlighted: no reset, the background stays.
+const WHITE: &str = "\x1b[38;2;255;255;255m";
+const EMPTY: &str = "\x1b[38;2;72;72;74m";
+
 /// Mode names that fit the window's table.
 const SHORT_NAMES: [&str; 4] = ["Mode 1", "Mode 2", "Mode 3", "High freq."];
 
@@ -525,17 +529,20 @@ impl Ui {
 
     /// The window's lines (32 visible characters at most).
     fn window(&self) -> Vec<String> {
-        let dim = "\x1b[90m";
-        let title = "\x1b[96m";
-        let hi = "\x1b[97m\x1b[48;2;40;46;60m";
-        let green = "\x1b[92m";
-        let yellow = "\x1b[93m";
-        let red = "\x1b[91m";
+        // The vendor's app uses iOS's system colours: grey labels, blue accent, green, orange
+        // and red for states. Their dark-mode values, on the window's #1c1c1e.
+        let dim = "\x1b[38;2;142;142;147m";
+        let title = "\x1b[1m\x1b[38;2;255;255;255m";
+        let hi = "\x1b[38;2;255;255;255m\x1b[48;2;10;132;255m";
+        let green = "\x1b[38;2;48;209;88m";
+        let yellow = "\x1b[38;2;255;159;10m";
+        let red = "\x1b[38;2;255;69;58m";
+        let blue = "\x1b[38;2;10;132;255m";
         let mut out = Vec::new();
         let link = match self.link {
             Link::Searching => format!("{yellow}○ looking for it{RESET}"),
-            Link::Connected => format!("{green}● connected{RESET}"),
-            Link::Demo => format!("\x1b[95m● demo{RESET}"),
+            Link::Connected => format!("{blue}● connected{RESET}"),
+            Link::Demo => format!("{blue}● demo{RESET}"),
             Link::Lost => format!("{red}○ asleep{RESET}"),
         };
         out.push(format!("{title}Laifen Wave{RESET}{}{link}", " ".repeat(32 - 11 - viz::visible_len(&link))));
@@ -555,8 +562,9 @@ impl Ui {
             20..=49 => yellow,
             _ => red,
         };
-        let bar: String = (0..10).map(|i| if i < level.div_ceil(10) { '█' } else { '░' }).collect();
-        let battery = format!("{colour}{bar}{RESET} {level:>3}%");
+        let full = level.div_ceil(10).min(10);
+        let battery =
+            format!("{colour}{}{EMPTY}{}{RESET} {level:>3}%", "█".repeat(full), "█".repeat(10 - full));
         let fw = format!("{dim}{}{RESET}", self.firmware);
         out.push(format!(
             "{fw}{}{battery}",
@@ -567,11 +575,11 @@ impl Ui {
         let row = self.row();
         for r in self.modes() {
             let s = if Some(r) == self.pending.map(|p| p.0) { self.shown().unwrap() } else { st.modes[r] };
-            let active = if st.mode as usize == r { format!("{green}●{RESET}") } else { " ".into() };
+            let active = if st.mode as usize == r { format!("{blue}●{RESET}") } else { " ".into() };
             let text = format!("{:<12} {:>5} {:>5} {:>5}", SHORT_NAMES[r], s.strength, s.range, s.speed);
             out.push(match (r == self.edited, row == Row::Modes) {
                 (true, true) => format!("{active} {hi}{text}{RESET}"),
-                (true, false) => format!("{active} \x1b[97m{text}{RESET}"),
+                (true, false) => format!("{active} \x1b[38;2;255;255;255m{text}{RESET}"),
                 _ => format!("{active} {dim}{text}{RESET}"),
             });
         }
@@ -579,16 +587,22 @@ impl Ui {
         out.push(format!("{title}{}{RESET}", MODE_NAMES[self.edited]));
         let shown = self.shown().unwrap_or(st.modes[0]);
         let (lo, hi_s) = brush::strength_range(self.edited);
-        for (r, label, v, lo, hi_v) in [
-            (Row::Strength, "strength", shown.strength, lo, hi_s),
-            (Row::Range, "range", shown.range, 1, 10),
-            (Row::Speed, "speed", shown.speed, 1, 10),
+        for (r, label, v, lo) in [
+            (Row::Strength, "strength", shown.strength, lo),
+            (Row::Range, "range", shown.range, 1),
+            (Row::Speed, "speed", shown.speed, 1),
         ] {
+            let _ = hi_s;
+            // White for the level, dark grey for the rest, as the app's sliders; only colour
+            // changes inside, so that a selected row keeps its background to the end.
             let filled = (v.saturating_sub(lo) as usize + 1).min(10);
-            let gauge: String = (0..10).map(|i| if i < filled { '█' } else { '·' }).collect();
+            let gauge = format!("{WHITE}{}{EMPTY}{}{WHITE}", "█".repeat(filled), "█".repeat(10 - filled));
             let text = format!("{label:<9} {gauge} {v:>3}");
-            out.push(if row == r { format!("  {hi}{text}{RESET}") } else { format!("  {text}") });
-            let _ = hi_v;
+            out.push(if row == r {
+                format!("  {hi}{text}{RESET}")
+            } else {
+                format!("  {WHITE}{text}{RESET}")
+            });
         }
         out.push(String::new());
         let time = self.pending_time.map(|(d, _)| d).unwrap_or(st.duration);

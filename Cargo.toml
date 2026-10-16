@@ -1,6 +1,6 @@
 [package]
 name = "laifen-toolbox"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Linux client for the Laifen Wave electric toothbrush (LFTB01-P) over Bluetooth LE"
 license = "MIT"

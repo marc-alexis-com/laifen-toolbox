@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-10-16
+
+- `tui`: the window takes the colours of the vendor's app, iOS's system palette in dark mode
+  (grey labels, blue accent and selection, green / orange / red states), and sets its own text
+  colour: on a light terminal theme its text used to be dark on the dark window.
+- `tui`: lights that are off are no longer drawn: as on the real brush, they disappear.
+- README: in the vendor's own look, a light studio banner set in Poppins and light terminal
+  cards, the 3D brush unchanged.
+
 ## 0.1.0 — 2026-10-16
 
 First version. Tested on a Laifen Wave, model LFTB01-P, firmware V2.0.8.Y44.303.

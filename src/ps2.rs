@@ -151,15 +151,16 @@ fn placed(scene: &Scene) -> Vec<Placed> {
     let turn = mat32(&matmul(&matmul(&rot_x(scene.tilt[0]), &rot_y(scene.tilt[1])), &rot_z(scene.swing)));
     let pivot = [0.0, 0.0, (SHAFT_BASE * MM + FLOOR_Z) as f32];
     put(&w.head, None, Some(&turn), pivot);
-    // A light that is off is invisible, as on the real brush.
-    let lamp = |on: Option<[f32; 3]>| match on {
-        Some(rgb) => wave::light(Some(rgb)),
-        None => wave::shell(scene.finish),
-    };
+    // A light that is off is not drawn: it is invisible on the real brush, and a flat disc of
+    // the handle's steel would still catch the light differently from the curved face.
     for (i, led) in w.leds.iter().enumerate() {
-        put(led, Some(lamp(scene.leds[i].then_some([0.95, 0.97, 1.0]))), None, [0.0; 3]);
+        if scene.leds[i] {
+            put(led, Some(wave::light(Some([0.95, 0.97, 1.0]))), None, [0.0; 3]);
+        }
     }
-    put(&w.battery, Some(lamp(scene.battery)), None, [0.0; 3]);
+    if let Some(rgb) = scene.battery {
+        put(&w.battery, Some(wave::light(Some(rgb))), None, [0.0; 3]);
+    }
     out
 }
 
@@ -552,9 +553,10 @@ pub mod tests {
 
     #[test]
     fn the_head_swings_and_the_lights_light() {
-        let a = render(&Scene::default(), 120, 120, 0.0, 10.0);
-        let b = render(&Scene { swing: 0.5, ..Scene::default() }, 120, 120, 0.0, 10.0);
-        let c = render(&Scene { leds: [true, false, false], ..Scene::default() }, 120, 120, 0.0, 10.0);
+        // Large enough for a light, 2 mm across, to cover pixels.
+        let a = render(&Scene::default(), 480, 480, 0.0, 10.0);
+        let b = render(&Scene { swing: 0.5, ..Scene::default() }, 480, 480, 0.0, 10.0);
+        let c = render(&Scene { leds: [true, false, false], ..Scene::default() }, 480, 480, 0.0, 10.0);
         assert_ne!(a.px, b.px);
         assert_ne!(a.px, c.px);
     }

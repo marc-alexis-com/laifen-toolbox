@@ -97,9 +97,8 @@ pub fn light(on: Option<[f32; 3]>) -> Material {
     }
 }
 
-/// The handle's own material: also what a light that is off looks like (it disappears under
-/// the surface, as on the real brush).
-pub fn shell(f: Finish) -> Material {
+/// The handle's own material.
+fn shell(f: Finish) -> Material {
     match f {
         // Mirror polish: mostly the reflected studio, a sharp highlight.
         Finish::Steel => plain(hex(0xd4d6da), 1.0, 70.0, 0.92),

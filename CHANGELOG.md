@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-10-16
 
 First version. Tested on a Laifen Wave, model LFTB01-P, firmware V2.0.8.Y44.303.
 

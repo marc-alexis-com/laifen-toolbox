@@ -28,7 +28,8 @@ and `X` is the checksum.
 | MTU: the app never requests one. Under BlueZ the 25-byte notifications arrived whole, so the effective ATT MTU is at least 28. Who negotiated it was not looked at. | confirmed |
 | No pairing, bonding, encryption or authentication: connecting, subscribing, reading and writing all worked without. The app has none on this path either. | confirmed |
 | As soon as notifications are on, the brush sends its firmware version (`0x01`) unprompted, before any write. | confirmed |
-| The brush does not advertise all the time: nothing was seen during two 60-minute watches; it showed up within 40 s, then within about 10 s, each time its owner was asked to wake it. What exactly wakes it (button, stand, picking it up) and how long it stays visible were not measured. `laifen` suggests pressing the button. | confirmed (not continuous); inferred (what wakes it) |
+| The brush does not advertise all the time: nothing was seen during two 60-minute watches; it showed up within 40 s, then within about 10 s, each time its owner was asked to wake it. A press on its button wakes it; `laifen` suggests one. | confirmed |
+| Left alone while connected, the brush dropped the connection 71 s after the last change made at its button (60 s after the repeated state of §3.4), then no longer showed up: back to sleep. The computer sent nothing in between; whether reads keep it awake was not tried. | confirmed (once) |
 | While the phone holds the connection, the brush is invisible to the computer: the vendor app can keep its connection open in the background, and a connected brush is not expected to advertise. Not tried. | inferred |
 | The vendor app expects a notification within 5 s of each write, and disconnects after three misses in a row. | app |
 
@@ -141,7 +142,7 @@ screen opens; it never sets the clock, and reads the history only on a hidden ge
 | Code | Meaning | Status |
 |---|---|---|
 | `0x01` | version, sent as soon as notifications are on | confirmed |
-| `0x0A` | state: after `0x04`, `0x0E` and `0x0F`, and when the active mode changes on the brush (§3.4) | confirmed |
+| `0x0A` | state: after `0x04`, `0x0E` and `0x0F`, after every start, stop or mode change made at the brush's button, and again about 10 s after the last change (§3.4) | confirmed |
 | `0x11` | fault code, 1 byte. Non-zero: the app blocks deep/gentle clean and firmware updates; it resets the code to 0 on each connection | app, never seen |
 | `0x17` | charging state, 1 byte, as in the state (§4) | app, never seen |
 
@@ -162,9 +163,17 @@ app's reason when `0x0F` is refused.
 - After `0x04`, `0x0E` and `0x0F`, the brush pushes its state on its own, sometimes twice,
   sometimes one write late: once, a state still showing Mode 3 arrived after the order to go back
   to Mode 2, just before its acknowledgement. After `0x05` and `0x0B`, nothing. **confirmed**
-- Unasked, the brush pushed its state twice, 10 s apart, both showing that its active mode had
-  gone from Mode 1 to Mode 2 (**confirmed**); a press on its button is the likely cause, not
-  checked (**inferred**).
+- The button sends nothing of its own: every change made with it is pushed at once as a full
+  state, which differs from the previous one by a single byte, byte 19 when the motor starts or
+  stops, byte 0 when the mode changes. In 90 s of button presses the brush pushed 42 states and
+  no other frame (**confirmed**). At the button, modes cycle Mode 1 → Mode 2 → Mode 3 → high
+  frequency → Mode 1, high frequency being on, and the mode can change while the motor runs
+  (**confirmed**).
+- About 10 s after the last change, the brush pushes the same state again, unchanged: after
+  10.1 s and 10.9 s, seen twice (**confirmed**); why is not known. Once, an unchanged state also
+  came 0.9 s before the motor started. The two unasked states seen earlier, 10 s apart and both
+  with the active mode gone from Mode 1 to Mode 2, fit this: a change at the button, then its
+  repeat (**inferred**).
 - A client must therefore read the state back rather than trust the last one pushed. `laifen`
   waits 500 ms after a write, reads the state, and reads it once more 800 ms later if the change
   is not there yet.
@@ -288,8 +297,9 @@ no override.
 1. What the brush checks in what it receives: `kind`, length, checksum. Nothing malformed was sent
    to find out, and nothing will be.
 2. Who negotiates the MTU, BlueZ or the brush.
-3. What a press on the button sends (the unprompted states of §3.4 are the likely trace); the
-   `0x11` and `0x17` reports, never seen.
+3. Which gesture on the button does what: the pushed states show the effects, not the presses.
+   Why the state is pushed again 10 s after the last change. The `0x11` and `0x17` reports,
+   never seen.
 4. Non-zero acknowledgement statuses, the charging state `02`, the list of fault codes.
 5. What airplane mode and emergency shutdown really do, whether airplane mode turns the radio off,
    and how to undo either from the brush.
@@ -304,7 +314,8 @@ no override.
 10. The 19-byte version format, and what each firmware (2.0.5, 2.0.7, 2.0.8, 2.0.9, V1.x, 0.2.5)
     supports.
 11. The values the brush applies after `0x0C` and `0x0D`.
-12. What wakes the brush and how long it stays visible; whether a brush connected to the phone is
+12. Whether anything but the button wakes the brush (its stand, picking it up), and whether reads
+    keep it awake past the 71 s seen idle; whether a brush connected to the phone is
     really invisible; whether it can be reached from a new connection while its motor runs (the
     stop of the tests went over the connection that started it); whether its button stops a motor
     started remotely.

@@ -24,7 +24,7 @@ fn refusal(cmd: u8) -> &'static str {
         0x02 => "set the date: never used by the vendor app, the year encoding is unknown",
         0x07 => "airplane mode: it may turn the brush's Bluetooth off, untested",
         0x14 => "emergency shutdown: untested, and refused by the vendor app on firmware 2.0.7 and 2.0.8",
-        0x16 => "deep / gentle clean: untested, not offered by the vendor app on firmware 2.0.x",
+        0x16 => "deep / gentle clean: untested, hidden by the vendor app on firmware 2.0.5, 2.0.7, 2.0.8 and 2.0.9",
         0x0C => "restore a mode's defaults: untested",
         0x09 => "brushing history: reading it may clear it on the brush, untested",
         _ => "not tested on a real brush",

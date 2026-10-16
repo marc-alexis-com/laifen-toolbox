@@ -23,3 +23,8 @@ pub fn install() {
 pub fn stop_requested() -> bool {
     STOP.load(Ordering::SeqCst)
 }
+
+/// Asks every wait to end, as Ctrl+C would (the 3D view does it when it quits).
+pub fn request_stop() {
+    STOP.store(true, Ordering::SeqCst);
+}

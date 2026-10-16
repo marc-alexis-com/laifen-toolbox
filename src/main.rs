@@ -7,7 +7,13 @@ mod cmd;
 mod dbus;
 mod decode;
 mod frame;
+mod kitty;
+mod ps2;
 mod signals;
+mod tui;
+mod viz;
+mod wave;
+mod zlib;
 
 use brush::{Brush, Options};
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -29,7 +35,7 @@ Examples:
   laifen completions zsh > ~/.zfunc/_laifen
 
 Wake the brush first (press its button), and close the Laifen app on your phone: a brush
-connected to the phone is invisible to the computer.
+connected to the phone is most likely invisible to the computer.
 Protocol notes: https://github.com/marc-alexis-com/laifen-toolbox/blob/main/docs/PROTOCOL.md";
 
 #[derive(Parser)]
@@ -112,6 +118,24 @@ enum Command {
         #[arg(long, default_value_t = 10, value_name = "SECONDS")]
         seconds: u64,
     },
+    /// The brush in 3D with all its settings, live: change them with the arrow keys
+    #[command(after_long_help = "In kitty (tmux included, with allow-passthrough on) the brush is a real \
+                                 picture; elsewhere it is drawn in text blocks. While the brush runs, its \
+                                 head swings with the active mode's range and speed.\n\nKeys: up/down \
+                                 move, left/right change, enter switch to the mode under the cursor, 1-4 \
+                                 switch mode, space start/stop brushing, c finish, o turntable, [ ] turn \
+                                 the view, q quit.")]
+    Tui {
+        /// A simulated brush, to try the view without one
+        #[arg(long)]
+        demo: bool,
+        /// Text blocks even in kitty
+        #[arg(long)]
+        blocks: bool,
+        /// The handle's finish
+        #[arg(long, value_enum, default_value_t = FinishArg::Steel)]
+        finish: FinishArg,
+    },
     /// One connection, several commands, one per line: typed, or piped in
     #[command(after_long_help = "Every command of laifen works inside, except shell, scan, watch and \
                                  completions; plus `sleep SECONDS` and `quit`. If the brush goes to \
@@ -160,6 +184,13 @@ enum DurationAction {
     },
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum FinishArg {
+    Steel,
+    Aluminium,
+    White,
+}
+
 #[derive(Args)]
 struct SwitchArgs {
     #[command(subcommand)]
@@ -189,7 +220,7 @@ fn duration_arg(s: &str) -> Res<u16> {
     } else {
         num(s.trim_end_matches('s'))?
     };
-    if !(60..=300).contains(&secs) || secs % 30 != 0 {
+    if !(60..=300).contains(&secs) || !secs.is_multiple_of(30) {
         return Err(format!("{secs} s: 1 to 5 minutes in 30-second steps, as the vendor app offers"));
     }
     Ok(secs as u16)
@@ -305,31 +336,6 @@ fn print_status(b: &Brush, st: &State, firmware: &str, json: bool) {
 
 // --- Commands that change something -------------------------------------------------------
 
-/// The state, refusing changes the vendor app would refuse.
-fn writable_state(b: &mut Brush) -> Res<State> {
-    let st = b.state()?;
-    if st.airplane {
-        return Err("the brush is in airplane mode: the vendor app refuses every change then, and so does \
-                    this tool"
-            .into());
-    }
-    Ok(st)
-}
-
-fn mode_payload(i: usize, s: &Settings) -> [u8; 4] {
-    [i as u8, s.strength, s.range, s.speed]
-}
-
-fn available(st: &State, i: usize) -> Res<()> {
-    if i == HF && st.high_frequency != Some(true) {
-        return Err("high frequency is off: laifen high-freq on".into());
-    }
-    if i >= st.modes.len() {
-        return Err(format!("this brush has no {}", MODE_NAMES[i]));
-    }
-    Ok(())
-}
-
 fn mode(b: &mut Brush, action: ModeAction) -> Res<()> {
     match action {
         ModeAction::Get => {
@@ -338,41 +344,14 @@ fn mode(b: &mut Brush, action: ModeAction) -> Res<()> {
             println!("{}: {}", mode_name(st.mode), settings_text(m));
         }
         ModeAction::Set { mode } => {
-            let st = writable_state(b)?;
-            available(&st, mode)?;
-            b.write(cmd::MODE, &mode_payload(mode, &st.modes[mode]))?;
-            b.check(&|s| s.mode as usize == mode)?;
+            b.set_mode(mode)?;
             println!("{}", MODE_NAMES[mode]);
         }
         ModeAction::Tune { mode, strength, range, speed } => {
             if strength.is_none() && range.is_none() && speed.is_none() {
                 return Err("nothing to change: give --strength, --range or --speed".into());
             }
-            let st = writable_state(b)?;
-            available(&st, mode)?;
-            let (low, high) = if mode == HF { (11, 20) } else { (1, 10) };
-            let check = |name: &str, v: Option<u8>, lo: u8, hi: u8| match v {
-                Some(v) if !(lo..=hi).contains(&v) => {
-                    Err(format!("{name} {v}: {lo} to {hi} for {}", MODE_NAMES[mode]))
-                }
-                _ => Ok(()),
-            };
-            check("strength", strength, low, high)?;
-            check("range", range, 1, 10)?;
-            check("speed", speed, 1, 10)?;
-            let old = st.modes[mode];
-            let new = Settings {
-                strength: strength.unwrap_or(old.strength),
-                range: range.unwrap_or(old.range),
-                speed: speed.unwrap_or(old.speed),
-            };
-            let active = st.mode as usize;
-            b.write(cmd::MODE, &mode_payload(mode, &new))?;
-            if mode != active {
-                // Setting a mode also switches to it: switch back.
-                b.write(cmd::MODE, &mode_payload(active, &st.modes[active]))?;
-            }
-            b.check(&|s| s.modes.get(mode) == Some(&new) && s.mode as usize == active)?;
+            let (_, new) = b.tune(mode, strength, range, speed)?;
             println!("{}: {}", MODE_NAMES[mode], settings_text(&new));
         }
     }
@@ -383,9 +362,7 @@ fn duration(b: &mut Brush, action: DurationAction) -> Res<()> {
     match action {
         DurationAction::Get => println!("{}", duration_text(b.state()?.duration)),
         DurationAction::Set { duration } => {
-            writable_state(b)?;
-            b.write(cmd::DURATION, &duration.to_be_bytes())?;
-            b.check(&|s| s.duration == duration)?;
+            b.set_duration(duration)?;
             println!("{}", duration_text(duration));
         }
     }
@@ -393,43 +370,34 @@ fn duration(b: &mut Brush, action: DurationAction) -> Res<()> {
 }
 
 fn reminder(b: &mut Brush, action: Switch) -> Res<()> {
-    let on = match action {
-        Switch::Get => {
-            println!("{}", switch_name(b.state()?.reminder));
-            return Ok(());
+    match action {
+        Switch::Get => println!("{}", switch_name(b.state()?.reminder)),
+        a => {
+            let on = matches!(a, Switch::On);
+            b.set_reminder(on)?;
+            println!("{}", switch_name(on));
         }
-        a => matches!(a, Switch::On),
-    };
-    writable_state(b)?;
-    b.write(cmd::REMINDER, &[on as u8])?;
-    b.check(&|s| s.reminder == on)?;
-    println!("{}", switch_name(on));
+    }
     Ok(())
 }
 
 fn high_freq(b: &mut Brush, action: Switch) -> Res<()> {
-    let st = if matches!(action, Switch::Get) { b.state()? } else { writable_state(b)? };
-    let current = st.high_frequency.ok_or("this brush does not report high frequency")?;
-    let on = match action {
+    match action {
         Switch::Get => {
-            println!("{}", switch_name(current));
-            return Ok(());
+            let hf = b.state()?.high_frequency.ok_or("this brush does not report high frequency")?;
+            println!("{}", switch_name(hf));
         }
-        a => matches!(a, Switch::On),
-    };
-    if !on && st.mode as usize == HF {
-        return Err("high frequency is the active mode: laifen mode set 3 first".into());
+        a => {
+            let on = matches!(a, Switch::On);
+            b.set_high_frequency(on)?;
+            println!("{}", switch_name(on));
+        }
     }
-    b.write(cmd::HIGH_FREQUENCY, &[on as u8])?;
-    b.check(&|s| s.high_frequency == Some(on))?;
-    println!("{}", switch_name(on));
     Ok(())
 }
 
 fn power(b: &mut Brush, on: bool) -> Res<()> {
-    let st = if on { writable_state(b)? } else { b.state()? };
-    b.write(cmd::POWER, &[on as u8])?;
-    b.check(&|s| s.running == Some(on))?;
+    let st = b.set_power(on)?;
     if on {
         println!("brushing: {}, {}", mode_name(st.mode), duration_text(st.duration));
     } else {
@@ -528,6 +496,7 @@ fn run(cli: Cli) -> Res<()> {
         mac: cli.mac.or_else(|| std::env::var("LAIFEN_MAC").ok().filter(|m| !m.is_empty())),
         wait: Duration::from_secs(cli.wait),
         timeout: Duration::from_millis(cli.timeout),
+        quiet: false,
     };
     match cli.command {
         Command::Completions { shell } => {
@@ -536,6 +505,16 @@ fn run(cli: Cli) -> Res<()> {
         }
         Command::Scan { seconds } => scan(seconds),
         Command::Shell => shell(&opts),
+        Command::Tui { demo, blocks, finish } => {
+            let finish = match finish {
+                FinishArg::Steel => wave::Finish::Steel,
+                FinishArg::Aluminium => wave::Finish::Aluminium,
+                FinishArg::White => wave::Finish::White,
+            };
+            // The view waits as long as it takes for the brush to wake, quietly.
+            let opts = Options { wait: Duration::from_secs(24 * 3600), quiet: true, ..opts };
+            tui::run(tui::TuiOptions { demo, blocks, finish }, opts)
+        }
         command => {
             let mut b = Brush::connect(&opts)?;
             let result = execute(&mut b, command);
@@ -570,7 +549,7 @@ fn execute(b: &mut Brush, command: Command) -> Res<()> {
         Command::Start => power(b, true),
         Command::Stop => power(b, false),
         Command::Watch { raw } => watch(b, raw),
-        Command::Scan { .. } | Command::Shell | Command::Completions { .. } => {
+        Command::Scan { .. } | Command::Shell | Command::Tui { .. } | Command::Completions { .. } => {
             Err("not available inside the shell".into())
         }
     }
@@ -652,7 +631,10 @@ fn shell(opts: &Options) -> Res<()> {
                 continue;
             }
         };
-        if matches!(cli.command, Command::Shell | Command::Scan { .. } | Command::Completions { .. }) {
+        if matches!(
+            cli.command,
+            Command::Shell | Command::Scan { .. } | Command::Tui { .. } | Command::Completions { .. }
+        ) {
             eprintln!("laifen: not available inside the shell");
             failures += 1;
             continue;

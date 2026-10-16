@@ -2,7 +2,7 @@
 
 use crate::bluez::{Ble, Device, Event};
 use crate::cmd;
-use crate::decode::{self, State};
+use crate::decode::{self, Settings, State, HF, MODE_NAMES};
 use crate::frame::{self, Frame, Kind, FROM_BRUSH};
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,8 @@ pub struct Options {
     pub mac: Option<String>,
     pub wait: Duration,
     pub timeout: Duration,
+    /// No hint on stderr while waiting for the brush (the 3D view owns the screen).
+    pub quiet: bool,
 }
 
 pub struct Brush {
@@ -57,8 +59,8 @@ impl Brush {
                 device.name, device.address
             ));
         }
-        // Seen on a real brush: right after a disconnection it can be seen advertising and still
-        // not let a connection through. Cancel, wait for a fresh advertisement, try again.
+        // Seen once on a real brush: found by discovery right after a disconnection, then the
+        // connection never came up. Cancel, wait for a fresh advertisement, try again.
         let mut attempt = 1;
         let chr = loop {
             match ble.connect(&device) {
@@ -153,6 +155,98 @@ impl Brush {
         }
     }
 
+    // --- Changes, each checked the way the vendor app checks it, then read back --------
+
+    /// The current state, when the vendor app would accept a change.
+    fn writable(&mut self) -> Res<State> {
+        let st = self.state()?;
+        if st.airplane {
+            return Err("the brush is in airplane mode: the vendor app refuses every change then, and so \
+                        does this tool"
+                .into());
+        }
+        Ok(st)
+    }
+
+    pub fn set_mode(&mut self, mode: usize) -> Res<State> {
+        let st = self.writable()?;
+        available(&st, mode)?;
+        self.write(cmd::MODE, &mode_payload(mode, &st.modes[mode]))?;
+        self.check(&|s| s.mode as usize == mode)
+    }
+
+    /// Changes a mode's settings (None keeps a value) without switching to it. Returns the
+    /// new state and the mode's new settings.
+    pub fn tune(
+        &mut self,
+        mode: usize,
+        strength: Option<u8>,
+        range: Option<u8>,
+        speed: Option<u8>,
+    ) -> Res<(State, Settings)> {
+        let st = self.writable()?;
+        available(&st, mode)?;
+        let (low, high) = strength_range(mode);
+        let check = |name: &str, v: Option<u8>, lo: u8, hi: u8| match v {
+            Some(v) if !(lo..=hi).contains(&v) => {
+                Err(format!("{name} {v}: {lo} to {hi} for {}", MODE_NAMES[mode]))
+            }
+            _ => Ok(()),
+        };
+        check("strength", strength, low, high)?;
+        check("range", range, 1, 10)?;
+        check("speed", speed, 1, 10)?;
+        let old = st.modes[mode];
+        let new = Settings {
+            strength: strength.unwrap_or(old.strength),
+            range: range.unwrap_or(old.range),
+            speed: speed.unwrap_or(old.speed),
+        };
+        let active = st.mode as usize;
+        self.write(cmd::MODE, &mode_payload(mode, &new))?;
+        if mode != active {
+            // Setting a mode also switches to it (seen on the brush): switch back.
+            self.write(cmd::MODE, &mode_payload(active, &st.modes[active]))?;
+        }
+        let st = self.check(&|s| s.modes.get(mode) == Some(&new) && s.mode as usize == active)?;
+        Ok((st, new))
+    }
+
+    /// Brushing time: 1 to 5 minutes in 30-second steps, as the vendor app offers.
+    pub fn set_duration(&mut self, secs: u16) -> Res<State> {
+        if !(60..=300).contains(&secs) || !secs.is_multiple_of(30) {
+            return Err(format!("{secs} s: 1 to 5 minutes in 30-second steps"));
+        }
+        self.writable()?;
+        self.write(cmd::DURATION, &secs.to_be_bytes())?;
+        self.check(&|s| s.duration == secs)
+    }
+
+    pub fn set_reminder(&mut self, on: bool) -> Res<State> {
+        self.writable()?;
+        self.write(cmd::REMINDER, &[on as u8])?;
+        self.check(&|s| s.reminder == on)
+    }
+
+    pub fn set_high_frequency(&mut self, on: bool) -> Res<State> {
+        let st = self.writable()?;
+        st.high_frequency.ok_or("this brush does not report high frequency")?;
+        if !on && st.mode as usize == HF {
+            return Err("high frequency is the active mode: switch to mode 3 first".into());
+        }
+        self.write(cmd::HIGH_FREQUENCY, &[on as u8])?;
+        self.check(&|s| s.high_frequency == Some(on))
+    }
+
+    /// Starts or stops brushing, with the active mode.
+    pub fn set_power(&mut self, on: bool) -> Res<State> {
+        if on {
+            self.writable()?;
+        }
+        self.write(cmd::POWER, &[on as u8])?;
+        self.check(&|s| s.running == Some(on))
+    }
+
     pub fn close(mut self) {
         self.shutdown();
     }
@@ -171,12 +265,40 @@ impl Drop for Brush {
     }
 }
 
+fn mode_payload(i: usize, s: &Settings) -> [u8; 4] {
+    [i as u8, s.strength, s.range, s.speed]
+}
+
+/// The vibration strength's range: 1-10, 11-20 in high frequency.
+pub fn strength_range(mode: usize) -> (u8, u8) {
+    if mode == HF {
+        (11, 20)
+    } else {
+        (1, 10)
+    }
+}
+
+fn available(st: &State, i: usize) -> Res<()> {
+    if i == HF && st.high_frequency != Some(true) {
+        return Err("high frequency is off: turn it on first".into());
+    }
+    if i >= st.modes.len() {
+        return Err(format!("this brush has no {}", MODE_NAMES[i]));
+    }
+    Ok(())
+}
+
 /// Discovery until the brush shows up; a hint on stderr if it does not right away.
 fn find(ble: &mut Ble, accept: &dyn Fn(&str, &str) -> bool, opts: &Options) -> Res<Device> {
     let quick = opts.wait.min(Duration::from_millis(1500));
     let mut found = ble.discover(accept, quick, true, &mut |_| {})?;
     if found.is_empty() && opts.wait > quick {
-        eprintln!("looking for the brush (up to {} s); if it sleeps, press its button", opts.wait.as_secs());
+        if !opts.quiet {
+            eprintln!(
+                "looking for the brush (up to {} s); if it sleeps, press its button",
+                opts.wait.as_secs()
+            );
+        }
         found = ble.discover(accept, opts.wait - quick, true, &mut |_| {})?;
     }
     found.into_iter().next().ok_or_else(|| {

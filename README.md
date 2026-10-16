@@ -180,8 +180,7 @@ firmware-update service the brush exposes is never touched.
 
 [docs/PROTOCOL.md](docs/PROTOCOL.md) describes the wire format and every command used here, each
 fact marked as **confirmed** on the device, taken from the vendor app's behaviour, or
-**inferred**. The full reverse-engineering notebook, in French, covers the rest of Laifen's range
-from the app's code: [laifen-re](https://github.com/marc-alexis-com/laifen-re).
+**inferred**.
 
 ## Tested hardware
 

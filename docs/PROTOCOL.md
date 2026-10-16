@@ -324,6 +324,5 @@ with function 0 write, 1 read, 2 report and 3 answer, a counter left at 0 outsid
 updates, and the same XOR of every previous byte. The vendor app picks one protocol or the other
 from the BLE name alone.
 
-That protocol is documented from the vendor app only, in French, in the
-[laifen-re](https://github.com/marc-alexis-com/laifen-re) repository; none of it was exercised on
-a device, and `laifen` does not support these brushes.
+That protocol is not described here: it was read in the vendor app only, none of it was
+exercised on a device, and `laifen` does not support these brushes.

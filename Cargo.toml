@@ -1,0 +1,24 @@
+[package]
+name = "laifen-toolbox"
+version = "0.1.0"
+edition = "2021"
+description = "Linux client for the Laifen Wave electric toothbrush (LFTB01-P) over Bluetooth LE"
+license = "MIT"
+readme = "README.md"
+keywords = ["bluetooth", "ble", "toothbrush", "laifen", "linux"]
+categories = ["command-line-utilities", "hardware-support"]
+publish = false
+
+[[bin]]
+name = "laifen"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+libc = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

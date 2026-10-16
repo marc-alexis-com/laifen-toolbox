@@ -16,9 +16,9 @@ pub type Mat3 = [[f64; 3]; 3];
 /// Camera distance: a mild perspective.
 const DISTANCE: f32 = 8.0;
 /// Height of the picture's centre.
-const LIFT: f32 = 0.05;
+const LIFT: f32 = 0.0;
 /// The scene spans about this many model units across the shorter side of the picture.
-const SPAN: f32 = 3.1;
+const SPAN: f32 = 3.6;
 const FLOOR_R: f32 = 2.0;
 /// Key light, towards the light (world space: from the upper front left of the viewer).
 const KEY: V = [-0.40, -0.65, 0.65];
@@ -151,10 +151,15 @@ fn placed(scene: &Scene) -> Vec<Placed> {
     let turn = mat32(&matmul(&matmul(&rot_x(scene.tilt[0]), &rot_y(scene.tilt[1])), &rot_z(scene.swing)));
     let pivot = [0.0, 0.0, (SHAFT_BASE * MM + FLOOR_Z) as f32];
     put(&w.head, None, Some(&turn), pivot);
+    // A light that is off is invisible, as on the real brush.
+    let lamp = |on: Option<[f32; 3]>| match on {
+        Some(rgb) => wave::light(Some(rgb)),
+        None => wave::shell(scene.finish),
+    };
     for (i, led) in w.leds.iter().enumerate() {
-        put(led, Some(wave::light(scene.leds[i].then_some([0.95, 0.97, 1.0]))), None, [0.0; 3]);
+        put(led, Some(lamp(scene.leds[i].then_some([0.95, 0.97, 1.0]))), None, [0.0; 3]);
     }
-    put(&w.battery, Some(wave::light(scene.battery)), None, [0.0; 3]);
+    put(&w.battery, Some(lamp(scene.battery)), None, [0.0; 3]);
     out
 }
 
@@ -451,6 +456,20 @@ pub fn render_shifted(scene: &Scene, w: usize, h: usize, az: f64, el: f64, shift
     Rgb8 { w, h, px }
 }
 
+/// The brush alone, on a transparent background (RGBA, no floor): for the README's banner.
+#[cfg(test)]
+pub fn render_rgba(scene: &Scene, w: usize, h: usize, az: f64, el: f64) -> Vec<u8> {
+    let cam = Camera::new(w, h, az, el, 0.0);
+    let mut fb = Frame { color: vec![[0.0; 3]; w * h], depth: vec![0.0; w * h] };
+    draw_model(&to_view(&placed(scene), &cam, false), &cam, &mut fb);
+    let mut px = Vec::with_capacity(w * h * 4);
+    for (i, c) in fb.color.iter().enumerate() {
+        px.extend(quantise(*c, i % w, i / w));
+        px.push(if fb.depth[i] > 0.0 { 255 } else { 0 });
+    }
+    px
+}
+
 /// Scales a picture up by a whole factor, each pixel becoming a `k` x `k` block, so that the
 /// terminal (which smooths what it scales) has almost nothing left to scale.
 pub fn upscale(img: &Rgb8, k: usize) -> Rgb8 {
@@ -492,8 +511,13 @@ pub mod tests {
 
     /// A PNG file of `img`, to look at the renderer's output.
     pub fn png(img: &Rgb8) -> Vec<u8> {
-        let mut raw = Vec::with_capacity((img.w * 3 + 1) * img.h);
-        for row in img.px.chunks(img.w * 3) {
+        png_of(img.w, img.h, 3, &img.px)
+    }
+
+    /// A PNG file of `w` x `h` pixels of `channels` bytes (3: RGB, 4: RGBA).
+    pub fn png_of(w: usize, h: usize, channels: usize, px: &[u8]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity((w * channels + 1) * h);
+        for row in px.chunks(w * channels) {
             raw.push(0);
             raw.extend_from_slice(row);
         }
@@ -506,11 +530,11 @@ pub mod tests {
             out.extend(crc32(&body).to_be_bytes());
         };
         let mut ihdr = Vec::new();
-        ihdr.extend((img.w as u32).to_be_bytes());
-        ihdr.extend((img.h as u32).to_be_bytes());
-        ihdr.extend([8, 2, 0, 0, 0]);
+        ihdr.extend((w as u32).to_be_bytes());
+        ihdr.extend((h as u32).to_be_bytes());
+        ihdr.extend([8, if channels == 4 { 6 } else { 2 }, 0, 0, 0]);
         chunk(b"IHDR", &ihdr);
-        chunk(b"IDAT", &zlib::compress(&raw, img.w * 3 + 1));
+        chunk(b"IDAT", &zlib::compress(&raw, w * channels + 1));
         chunk(b"IEND", &[]);
         out
     }
@@ -533,6 +557,47 @@ pub mod tests {
         let c = render(&Scene { leds: [true, false, false], ..Scene::default() }, 120, 120, 0.0, 10.0);
         assert_ne!(a.px, b.px);
         assert_ne!(a.px, c.px);
+    }
+
+    /// The README's pictures, to $LAIFEN_PREVIEW_DIR: the brush turning once on a transparent
+    /// background, small, for the banner to scale up in whole pixels (`spin/`); the picture
+    /// behind the window of `laifen tui` for a 150 x 42 terminal with the cells of the README's
+    /// screenshots, 7.5 x 20 pixels (`tui.png`); the same while brushing with the owner's Mode 2
+    /// (strength, range and speed 10), 10 frames a second (`brushing/`).
+    #[test]
+    #[ignore]
+    fn readme_pictures() {
+        let dir = std::env::var("LAIFEN_PREVIEW_DIR").expect("LAIFEN_PREVIEW_DIR");
+        let lit = Scene { leds: [false, true, false], battery: Some([0.35, 0.95, 0.45]), ..Scene::default() };
+        std::fs::create_dir_all(format!("{dir}/spin")).unwrap();
+        for i in 0..64 {
+            let (w, h) = (220, 220);
+            let px = render_rgba(&lit, w, h, i as f64 * 360.0 / 64.0, 8.0);
+            std::fs::write(format!("{dir}/spin/frame-{i:03}.png"), png_of(w, h, 4, &px)).unwrap();
+        }
+        // As `KittyView` draws it: rendered at about 200 lines, scaled up by a whole factor.
+        let (cols, rows, k) = (150usize, 42usize, 4usize);
+        let (pw, ph) = (cols * 15 / 2 / k, rows * 20 / k);
+        let shift = -(crate::viz::WINDOW as f64) / 2.0 / cols as f64;
+        let img = upscale(&render_shifted(&lit, pw, ph, 25.0, 10.0, shift), k);
+        std::fs::write(format!("{dir}/tui.png"), png(&img)).unwrap();
+        std::fs::create_dir_all(format!("{dir}/brushing")).unwrap();
+        for i in 0..40u64 {
+            let t = i as f64 / 10.0;
+            let (amplitude, freq) = (30f64.to_radians(), 0.8 + 0.22 * 10.0);
+            let n = |seed: u64| {
+                ((i.wrapping_mul(6364136223846793005).wrapping_add(seed) >> 33) as f64 / (1u64 << 31) as f64)
+                    * 2.0
+                    - 1.0
+            };
+            let scene = Scene {
+                swing: amplitude * (std::f64::consts::TAU * freq * t).sin(),
+                tilt: [0.9f64.to_radians() * n(1), 0.9f64.to_radians() * n(7)],
+                ..lit
+            };
+            let img = upscale(&render_shifted(&scene, pw, ph, 25.0 + 1.4 * i as f64, 10.0, shift), k);
+            std::fs::write(format!("{dir}/brushing/frame-{i:03}.png"), png(&img)).unwrap();
+        }
     }
 
     /// Writes PNG previews to $LAIFEN_PREVIEW_DIR: each finish, from a few angles.

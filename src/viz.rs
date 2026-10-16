@@ -81,6 +81,15 @@ fn framed(window: &[String]) -> Vec<String> {
     lines
 }
 
+/// The screen of `laifen tui` without its picture: the window alone, flush right. For the
+/// README's images, which draw the picture underneath.
+#[cfg(test)]
+pub fn window_only(cols: usize, rows: usize, window: &[String]) -> String {
+    let mut out = String::new();
+    compose(rows, cols, window, &mut out, |_, width, out| out.push_str(&" ".repeat(width)));
+    out
+}
+
 /// `h` lines over a picture `cols` wide (drawn by `row(y, width, out)`): the window sits flush
 /// right, one line down, in front of the picture.
 fn compose(

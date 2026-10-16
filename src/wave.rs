@@ -97,7 +97,9 @@ pub fn light(on: Option<[f32; 3]>) -> Material {
     }
 }
 
-fn shell(f: Finish) -> Material {
+/// The handle's own material: also what a light that is off looks like (it disappears under
+/// the surface, as on the real brush).
+pub fn shell(f: Finish) -> Material {
     match f {
         // Mirror polish: mostly the reflected studio, a sharp highlight.
         Finish::Steel => plain(hex(0xd4d6da), 1.0, 70.0, 0.92),
@@ -364,8 +366,8 @@ pub fn model(finish: Finish) -> Wave {
     let mut body = Builder::default();
     handle(&mut body, finish);
     collar(&mut body);
-    // The button: a dark ring round a disc of the handle's own finish.
-    body.front_disc(0.0, 89.0, 4.6, 0.12, plain(hex(0x45484d), 0.5, 20.0, 0.3));
+    // The button: a thin, slightly darker ring round a disc of the handle's own finish.
+    body.front_disc(0.0, 89.0, 4.6, 0.12, plain(hex(0x8f949b), 0.8, 40.0, 0.7));
     body.front_disc(0.0, 89.0, 3.8, 0.24, shell(finish));
 
     let mut head_part = Builder::default();

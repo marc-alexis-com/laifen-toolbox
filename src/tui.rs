@@ -555,7 +555,7 @@ impl Ui {
             20..=49 => yellow,
             _ => red,
         };
-        let bar: String = (0..10).map(|i| if i < level.div_ceil(10) { '▮' } else { '▯' }).collect();
+        let bar: String = (0..10).map(|i| if i < level.div_ceil(10) { '█' } else { '░' }).collect();
         let battery = format!("{colour}{bar}{RESET} {level:>3}%");
         let fw = format!("{dim}{}{RESET}", self.firmware);
         out.push(format!(
@@ -638,8 +638,8 @@ impl Ui {
             _ => out.push(String::new()),
         }
         out.push(String::new());
-        out.push(format!("{dim}↑↓ move  ←→ change  ⏎ use mode{RESET}"));
-        out.push(format!("{dim}␣ brush  1-4 mode  c finish{RESET}"));
+        out.push(format!("{dim}↑↓ move  ←→ change  enter use{RESET}"));
+        out.push(format!("{dim}space brush  1-4 mode  c finish{RESET}"));
         out.push(format!("{dim}o turn  [ ] view  q quit{RESET}"));
         out
     }
@@ -887,6 +887,30 @@ mod tests {
         assert_eq!(ui.edited, 0, "wraps round");
         ui.key(Key::Enter, &tx);
         assert!(matches!(rx.try_recv(), Ok(Ask::Mode(0))));
+    }
+
+    /// The window of `laifen tui` for the README, from the state read on the owner's brush at
+    /// 17:34 on 2026-10-16 (`ui_with_state`, battery 90 %), to $LAIFEN_PREVIEW_DIR/windows:
+    /// idle (`tui.ansi`), then brushing, 10 frames a second for 5 s (`brushing/`).
+    #[test]
+    #[ignore]
+    fn readme_windows() {
+        let dir = std::env::var("LAIFEN_PREVIEW_DIR").expect("LAIFEN_PREVIEW_DIR");
+        std::fs::create_dir_all(format!("{dir}/windows/brushing")).unwrap();
+        let mut ui = ui_with_state();
+        let mut st = ui.state.clone().unwrap();
+        st.battery = 90;
+        ui.take_state(st.clone());
+        std::fs::write(format!("{dir}/windows/tui.ansi"), viz::window_only(150, 42, &ui.window())).unwrap();
+        st.running = Some(true);
+        ui.take_state(st);
+        ui.say(Tone::Good, "brushing".into());
+        for i in 0..50u64 {
+            ui.brushing_since = Some(Instant::now() - Duration::from_millis(100 * i + 50));
+            ui.message = Some((Tone::Good, "brushing".into(), Instant::now()));
+            let screen = viz::window_only(150, 42, &ui.window());
+            std::fs::write(format!("{dir}/windows/brushing/frame-{i:03}.ansi"), screen).unwrap();
+        }
     }
 
     #[test]

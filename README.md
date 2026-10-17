@@ -193,8 +193,8 @@ On the LFTB01-P, with this tool: every setting was changed, read back and restor
 session; the motor was started and stopped from the computer (its owner felt it run); the state,
 the firmware version sent on connection, and the state the brush pushes after a change were all
 read. `laifen tui` connected to the brush, changed the brushing time from the keyboard and back,
-and started and stopped brushing. Not yet exercised: `watch`, and what the brush reports when its
-button is pressed.
+and started and stopped brushing. `watch` was run while the button was pressed: the brush sends no
+frame of its own, only its full state, on every change and again about 10 s after the last one.
 
 ## Troubleshooting
 

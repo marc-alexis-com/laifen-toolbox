@@ -187,7 +187,7 @@ fact marked as **confirmed** on the device, taken from the vendor app's behaviou
 | Product | Model | Firmware | Status |
 |---|---|---|---|
 | Laifen Wave | `LFTB01-P` | `V2.0.8.Y44.303` | tested, see below |
-| Other Laifen brushes | `LFTB01-SE`, `LFTB02-S…`, `LFTB01-C`… | | another protocol: not supported |
+| Other Laifen brushes | `LFTB01-SE`, `LFTB02-S…`, `LFTB01-C`… | | another protocol: not supported yet — [a capture would seed it](CONTRIBUTING.md) |
 
 On the LFTB01-P, with this tool: every setting was changed, read back and restored in one
 session; the motor was started and stopped from the computer (its owner felt it run); the state,
@@ -236,6 +236,14 @@ The source is small and dependency-light (`clap`, `clap_complete`, `libc`):
 The renderer, the kitty protocol and the compressor come from
 [nothing-toolbox](https://github.com/marc-alexis-com/nothing-toolbox), the same author's tool for
 the Nothing Headphone (1).
+
+## Contributing
+
+This tool was worked out on one brush; it grows when people with other brushes, firmwares or
+shells share what theirs does. The most useful thing is a capture from your own: open a
+[brush report](https://github.com/marc-alexis-com/laifen-toolbox/issues/new?template=add-a-brush.yml)
+with `laifen status --json` and a `laifen watch --raw` while you press the button, address masked.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the details, and what is and isn't supported yet.
 
 ## Legal
 

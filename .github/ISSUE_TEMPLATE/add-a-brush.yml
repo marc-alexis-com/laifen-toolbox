@@ -1,0 +1,57 @@
+name: Add a brush
+description: Report a Laifen brush so it can be supported
+title: "[brush] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping `laifen` grow beyond the one brush it was built on.
+        Everything asked here is read-only or reversible. Mask the address suffix and any serial.
+  - type: input
+    id: ble-name
+    attributes:
+      label: BLE name
+      description: What `laifen scan` shows. Keep the last four hex digits, mask the rest if you like.
+      placeholder: LFTB01-P-XXXX
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Retail model and shell
+      description: If you know it — plastic (LFTB01-P), stainless (LFTB01-S), aluminium (LFTB01-A), or another product.
+      placeholder: Laifen Wave, stainless steel
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      description: The version from `laifen status`.
+      placeholder: V2.0.8.Y44.303
+  - type: textarea
+    id: status
+    attributes:
+      label: laifen status --json
+      description: Paste the output. Mask the address.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: frames
+    attributes:
+      label: laifen watch --raw
+      description: Run it, then press the button and cycle the modes. Paste what it prints.
+      render: text
+  - type: textarea
+    id: notes
+    attributes:
+      label: What works, what doesn't
+      description: Anything the tool got wrong, or that looks different from the docs.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before you post
+      options:
+        - label: I removed the address suffix and any serial number.
+          required: true
+        - label: I only ran read-only or reversible commands.
+          required: true

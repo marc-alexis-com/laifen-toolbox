@@ -46,6 +46,12 @@ Whether other units share the `C0:00:00:00` part is unknown. The vendor app reco
 by name prefix only, without reading the advertising data, and knows two more names for a brush
 in firmware-update mode, `PPlusOTA` and `LFTB-S-01-OTA` (**app**).
 
+**Shell variants.** The Wave ships in three shells under one FCC filing (2BE2Y-LFTB01): plastic
+`LFTB01-P`, stainless steel `LFTB01-S`, aluminium `LFTB01-A`; in the filing's own words the shell
+differs but "the RF chip remains unchanged". The unit tested here is the stainless one, and it
+advertises as `LFTB01-P` all the same; the other shells, sharing the board, are expected to
+behave identically (**inferred**).
+
 **GATT table**, as read from the brush (**confirmed**):
 
 ```
@@ -70,7 +76,7 @@ ff01  the protocol
   left in, probably (**inferred**).
 - The Phyplus update service sits next to the protocol's, so the update stack the app uses for
   this model does target this brush (**confirmed**). `ff01`/`ff02` is also that SDK's default
-  "app" service: the chip is probably a Phyplus PHY62xx (**inferred**). `laifen` never touches the
+  "app" service: the chip is a Phyplus **PHY6222** (**confirmed**: the internal photos of FCC filing 2BE2Y-LFTB01 show a die marked `PHY6222QC`). `laifen` never touches the
   update service (§6).
 
 ## 2. Frame
